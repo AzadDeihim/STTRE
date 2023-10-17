@@ -1,0 +1,27 @@
+# STTRE
+
+STTRE is a Transformer-based model designed for multivariate time series forecasting. Let $X = \{x_0, \; x_1, \; \cdot \cdot \cdot \; ,\; x_{m}\}$ define a multivariate time series with $m$ variables, where each $x_i$ represents a univariate time series with $l$ historical observations, i.e, $x_i = \{x_{i,1}, \; x_{i,2}, \; \cdot \cdot \cdot \; ,\; x_{i, l}\}$,  where $x_{i,j} \in \mathbb{R}$ denotes the value of the $i$'th variable at the $j$'th time step. Given $X$, the objective is to predict $Y = \{x_{i,l+1}\}$. 
+
+STTRE incorporates three modules: the temporal module, the spatial module, and the spatio-temporal module. Each module is designed to capture different latent dependencies within a multivariate time series. Each module will accept a flattened and embedded multivariate time series segment $X_e \in \mathbb{R}^{lm \times d}$. The inputs are flattened into a $lm$ length vector, and then each element is cast into the embedding dimension via linear transformation.
+
+![MTSTransformer.pdf](https://github.com/AzadDeihim/STTRE/files/12928273/MTSTransformer.pdf)
+
+The temporal module is designed to detect strictly temporal dependencies while minimizing its ability to capture spatial dependencies. In this module, multi-head attention will have exactly $m$ heads, one head to attend to each variable. Also, $X_e$ will be divided along the $m$ dimension rather than the $d$ dimension, resulting in a $(l, d)$ space for each head so that heads cannot attend to variables other than the one allocated to it. Lastly, weight matrices will have separate weights for each head. There are no learned weights in the temporal module that are shared across multiple variables, so each weight will only be capable of learning information regarding the variable it was delegated to.
+
+The spatial module behaves similarly to the temporal module but transposed --- $X$ must be transposed before transforming into $X_e$. In this module, multi-head attention will use exactly $l$ heads, one head to attend to each time step. $X_e$ is divided along the $l$ dimension, resulting in a $(m, d)$ space for each head, so each head cannot attend to time steps other than the one allocated. Weight matrices will have separate weights for each head --- weights will be capable of learning information across variables but only within their assigned time step.
+
+Multi-head attention in the spatio-temporal module will be constructed differently than in the spatial and temporal modules --- it is more similar to that of a standard implementation. It will have four heads, with each attending to $\frac{1}{h}$ of the embedding space, resulting in a $(lm, \frac{d}{h})$ dimensional space for each head. Unlike the other modules, the heads in the multi-head attention will be granted access to elements across different variables and timesteps but are confined to their assigned portion of the embedding space. Weight matrices will share weights across heads. A visual representation of the multi-head attention's functionality for each module is provided in the following Figure:
+
+[Cube.pdf](https://github.com/AzadDeihim/STTRE/files/12928668/Cube.pdf)
+
+Relative embeddings are an important component of this model. They are employed to aid each module in constructing an encoded spatio-temporal representation of the multivariate time series. To obtain relative embeddings, we must first generate a matrix of learnable relative embedding weights $E_r$. The operation:  $S = \text{skew}(QE_r^T)$ is performed using $Q$, the queries, and $E_r$ to obtain $S$, a square matrix containing an entry for all pairs of elements in $X$, denoting a relationship between the elements' locations in $X$. Next, the scaled dot-product attention function is augmented to factor relative embedding information: $\text{Attention}(Q, K, V) = \text{Softmax}(\frac{QK^T + S}{\sqrt{d/h}})V$
+
+In each module, relative embeddings will capture pairwise relationships between elements within their respective head inspection spaces. In the temporal module, the relative embedding weight matrix $E_t \in \mathbb{R}^{h \times l \times d}$, have a separate $(l, d)$ dimensional weight matrix for each head as the relative embeddings of each head should only be able to acknowledge pairs within its assigned variable, and not be able to acknowledge pairs across variables. The resulting matrix $S_t \in \mathbb{R}^{h \times l \times l}$ will be a matrix of pairwise temporal relationships.
+
+In the spatial module, $E_s \in \mathbb{R}^{h \times m \times d}$ has a separate $(m, d)$ dimensional weight matrix for each head, as the relative embeddings of each head should only be able to acknowledge pairs within its assigned time step, and not be able to acknowledge pairs across time steps. Thus $S_s \in \mathbb{R}^{h \times m \times m}$ will be a matrix of pairwise spatial relationships.
+
+In the spatio-temporal module, $E_{st} \in \mathbb{R}^{lm \times \frac{d}{h}}$ has shared weights across heads. This is done to reduce memory requirements but cannot be done in other modules as it may obstruct their ability to perform their delegated task. Relative embeddings in this module will be capable of recognizing pairs across variables and time steps, thus $S_{st} \in \mathbb{R}^{lm \times lm}$ will be a matrix of pairwise spatio-temporal relationships.
+
+The below figure provides a visual representation of each module's inspection space of relative embeddings:
+
+[relative.pdf](https://github.com/AzadDeihim/STTRE/files/12928671/relative.pdf)
